@@ -1,0 +1,100 @@
+# read data
+weather <- read.csv("weatherAUS.csv", header = TRUE, sep = ",")
+head(weather)
+tail(weather)
+nrow(weather) # 145460
+ncol(weather) # 23
+summary(weather)
+
+# data exploration 
+unique(weather$RainTomorrow)
+f_rain_tomorrow <- as.factor(weather$RainTomorrow)
+# check label frequencies 
+levels(f_rain_tomorrow)
+table(f_rain_tomorrow)
+
+# drop characters for imputation
+weather <- subset(weather, select = -c(Location, Date, RainToday, WindGustDir, WindDir9am, WindDir3pm))
+
+nrow(weather) # 145460
+# too much data for RStudio, take a sample instead of size 10000
+library(dplyr)
+weather <- sample_n(weather, 10000)
+
+# split features, labels 
+features <- subset(weather, select = -c(RainTomorrow))
+labels <- subset(weather, select = c(RainTomorrow))
+
+# forward fill missing labels 
+library(zoo)
+labels <- na.locf(na.locf(labels), fromLast = TRUE)
+sum(is.na(labels)) # 0 
+
+# mean - fill missing features 
+for (i in 1:ncol(features)) {
+    features[is.na(features[,i]), i] <- mean(features[,i], na.rm = TRUE)
+}
+
+# replace outliers with mean in respective column
+Outliers <- function(data) {
+  for (i in 1:ncol(data)) {
+  vals <- boxplot.stats(data[,i])$out
+  indexes <- which(data[,i] %in% c(vals))
+  data[, i][indexes] <- mean(data[, i])
+  }
+  return(data)
+}
+features <- Outliers(features)
+# sample outlier test on Temp9am
+boxplot(features$Temp9am, xlab = "Temperature in the Morning", ylab = "Celcius")
+
+# normalize for faster execution 
+normalize <- function(data) {
+  data <- (data - min(data)) / (max(data) - min(data))
+  return(data)
+}
+features <- normalize(features)
+
+# merge features, labels 
+weather <- cbind(features, labels)
+colnames(weather)[ncol(weather)] <- "RainTomorrow"
+
+# convert response variable to factor 
+weather$RainTomorrow <- as.factor(weather$RainTomorrow)
+
+# train, test split 
+library(caret)
+set.seed(42) # stable execution
+split_indexes <- caret::createDataPartition(y = weather$RainTomorrow, times = 1, p = .75, list = F)
+training <- as.data.frame(weather[split_indexes,])
+testing <- as.data.frame(weather[-split_indexes,])
+table(weather$RainTomorrow) 
+
+# apply Naive-Bayes 
+library(e1071)
+naiveB_model <- naiveBayes(training[,1:16], training[[17]])
+naiveB_model
+
+# find predictions on the model 
+(nb_predictions <- predict(naiveB_model, testing[,1:16]))
+(nb_probs <- predict(naiveB_model, testing[,1:16], "raw"))
+
+myConfTable <- confusionMatrix(data = nb_predictions, reference = testing[[17]], dnn = c("Predictions", "Actual/Reference"), mode = "everything")
+(accuracy <- myConfTable$overall["Accuracy"]) # 0.7936 
+
+probmax <- NULL
+for(i in 1:nrow(testing)){
+    probmax[i] <- max(nb_probs[i,1],nb_probs[i,2])      
+}
+results <- data.frame(testing[[17]], nb_predictions, nb_probs,probmax)
+(ave_prob <- mean(probmax))
+
+# find predictions on the model
+(my_table <- table(nb_predictions, testing[[17]], dnn = c("Predictions", "Actual/Reference")))
+
+# confusion matrix 
+confusionMatrix(data = nb_predictions, reference = testing[[17]], dnn = c("Predictions", "Actual/Reference"), mode = "everything")
+
+
+
+

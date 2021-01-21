@@ -1,0 +1,58 @@
+# read data
+weather <- read.csv("weatherAUS.csv", header = TRUE, sep = ",")
+head(weather)
+tail(weather)
+nrow(weather) # 145460
+ncol(weather) # 23
+summary(weather)
+
+# data exploration 
+unique(weather$RainTomorrow)
+f_rain_tomorrow <- as.factor(weather$RainTomorrow)
+# check label frequencies 
+levels(f_rain_tomorrow)
+table(f_rain_tomorrow)
+
+nrow(weather) # 145460
+# too much data for RStudio, take a sample instead of size 10000
+library(dplyr)
+weather <- sample_n(weather, 10000)
+
+# drop redundant columns, experiment with RainToday in this model
+# it may carry some useful information 
+weather <- subset(weather, select = -c(Location, Date))
+
+# forward fill missing values
+library(zoo)
+weather <- na.locf(na.locf(weather), fromLast = TRUE)
+sum(is.na(weather)) # 0 
+
+# trees are resistant to outliers, no need to check
+# normalization is also unnecessary
+
+# train, test split 
+library(caret)
+set.seed(42) # stable execution
+split_indexes <- caret::createDataPartition(y = weather$RainTomorrow, times = 1, p = .75, list = F)
+training <- as.data.frame(weather[split_indexes,])
+testing <- as.data.frame(weather[-split_indexes,])
+
+# apply random forest
+install.packages("randomForest")
+library(randomForest)
+RF_model <- randomForest(formula = as.factor(RainTomorrow) ~., data = training, importance = TRUE)
+
+print(RF_model)
+summary(RF_model)
+
+importance(RF_model)        
+varImpPlot(RF_model) 
+
+# predictions on the model 
+RF_predictions <- predict(RF_model, newdata = testing[,-21], type = "class")
+
+# confusion matrix 
+(my_table <- table(RF_predictions, testing[[21]], dnn = c("Predictions", "Actual/Reference")))
+confusionMatrix(my_table, mode = "everything")
+
+# accuracy = 0.8399

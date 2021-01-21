@@ -1,0 +1,101 @@
+# read data
+weather <- read.csv("weatherAUS.csv", header = TRUE, sep = ",")
+head(weather)
+tail(weather)
+nrow(weather) # 145460
+ncol(weather) # 23
+summary(weather)
+
+# average pressure at noon for tomorrow's forecast 
+mean(weather$Pressure3pm[weather$RainTomorrow == "Yes"], na.rm = TRUE) #  1012.301
+mean(weather$Pressure3pm[weather$RainTomorrow == "No"], na.rm = TRUE) # 1016.114
+
+summary(weather)
+# separate numeric and categorical data 
+numeric_weather <- subset(weather, select = -c(Date, Location, RainToday, RainTomorrow, WindGustDir, WindDir9am, WindDir3pm))
+categorical_weather <- subset(weather, select = c(Date, Location, RainToday, RainTomorrow, WindGustDir, WindDir9am, WindDir3pm))
+
+# missing value imputation 
+for (i in 1:ncol(numeric_weather)) {
+    numeric_weather[is.na(numeric_weather[,i]), i] <- mean(numeric_weather[,i], na.rm = TRUE)
+}
+
+# determine the outliers in data 
+summary(numeric_weather)
+
+# create box - plots for each numerical attribute to be used
+# fill outliers with the mean in respective column 
+colnames(numeric_weather)
+boxplot(numeric_weather$Temp3pm, xlab = "Temperature At Noon", ylab = "Celcius")
+vals <- boxplot.stats(numeric_weather$Temp3pm)$out
+indexes <- which(numeric_weather$Temp3pm %in% c(vals))
+numeric_weather$Temp3pm[indexes] <- mean(numeric_weather$Temp3pm)
+
+# define a function to do the same for all columns efficiently 
+Outliers <- function(data) {
+  for (i in 1:ncol(data)) {
+  vals <- boxplot.stats(data[,i])$out
+  indexes <- which(data[,i] %in% c(vals))
+  data[, i][indexes] <- mean(data[, i])
+  }
+  return(data)
+}
+# test if function works correctly 
+test <- numeric_weather
+test <- Outliers(test)
+# plot two box - plots to see if outliers are negated
+boxplot(numeric_weather$Temp9am, xlab = "Morning Temperature with Outliers", ylab = "Celcius")
+boxplot(test$Temp9am, xlab = "Morning Temperature without Outliers", ylab = "Celcius")
+# function works correctly, apply it to all attributes 
+numeric_weather <- Outliers(numeric_weather)
+
+# examine humidity, temperature relationship 
+library(ggplot2)
+ggplot(numeric_weather, aes(y = log(Temp3pm), x = Humidity3pm, colour = categorical_weather$RainTomorrow)) + geom_point(alpha = 0.6) 
+# as time shifts towards night, humidity relationship with rain strengthens
+
+# normalize for faster execution 
+normalize <- function(data) {
+  data <- (data - min(data)) / (max(data) - min(data))
+  return(data)
+}
+numeric_weather <- normalize(numeric_weather)
+summary(numeric_weather) # check
+
+# convert categorical labels to binary classification 
+categorical_weather$RainTomorrow <- ifelse(categorical_weather$RainTomorrow == "Yes", 1, 0)
+numeric_weather <- cbind(numeric_weather, categorical_weather$RainTomorrow)
+colnames(numeric_weather)
+colnames(numeric_weather)[17] <- "RainTomorrow"
+
+# forward fill missing labels 
+library(zoo)
+numeric_weather <- na.locf(na.locf(numeric_weather), fromLast = TRUE)
+
+library(dplyr)
+set.seed(42)
+nrow(numeric_weather) # 145460
+# too much data for RStudio, take a sample instead of size 10000
+numeric_weather <- sample_n(numeric_weather, 10000)
+
+# train, test split 
+library(caret)
+set.seed(42) # stable execution
+split_indexes <- caret::createDataPartition(y = numeric_weather$RainTomorrow, times = 1, p = .75, list = F)
+training <- as.data.frame(numeric_weather[split_indexes,])
+testing <- as.data.frame(numeric_weather[-split_indexes,])
+table(numeric_weather$RainTomorrow) 
+
+# apply k-nearest neighbours algoritm to data 
+library(class)
+set.seed(42)
+colnames(numeric_weather)
+(knn_predictions <- knn(train = training[, -17], test = testing[, -17], cl = training[[17]], k = 3))
+head(knn_predictions) 
+head(testing[[17]]) 
+
+# confusion matrix 
+(my_table <- table(knn_predictions, testing[[17]], dnn = c("Predictions", "Actual/Reference")))
+confusionMatrix(my_table, mode = "everything")
+
+
