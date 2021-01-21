@@ -2,7 +2,7 @@
 
 ### Dataset Access
 
-1. [AUS Weather Data via Kaggle](https://www.kaggle.com/jsphyg/weather-dataset-rattle- package)
+1. [AUS Weather Data via Kaggle](https://www.kaggle.com/jsphyg/weather-dataset-rattle-package)
 ---
 
 ### Abstract  
